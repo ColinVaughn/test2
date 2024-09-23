@@ -2,9 +2,126 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>$Title$</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebXR AR Viewer</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+    }
+    #start-ar {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      font-size: 18px;
+    }
+  </style>
 </head>
 <body>
-$END$
+
+<button id="start-ar">Start AR</button>
+
+<!-- Three.js and WebXR Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/webxr/ARButton.js"></script>
+
+<script>
+  let camera, scene, renderer, controller;
+  let reticle;
+  let model = null; // Will store the loaded GLB model
+
+  init();
+
+  function init() {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+
+    // Scene and Camera
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+    // Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    // Light
+    const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+    light.position.set(0.5, 1, 0.25);
+    scene.add(light);
+
+    // Reticle to show where the object will be placed
+    reticle = new THREE.Mesh(
+            new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2),
+            new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    );
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+    scene.add(reticle);
+
+    // Load the GLB model using GLTFLoader
+    const loader = new THREE.GLTFLoader();
+    loader.load('model.glb', function (gltf) {
+      model = gltf.scene;
+      model.scale.set(0.5, 0.5, 0.5); // Scale the model if necessary
+    }, undefined, function (error) {
+      console.error(error);
+    });
+
+    // AR Button to enter AR mode
+    document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+
+    // Controller for detecting taps on the screen
+    controller = renderer.xr.getController(0);
+    controller.addEventListener('select', onSelect);
+    scene.add(controller);
+
+    // Animation loop
+    renderer.setAnimationLoop(render);
+  }
+
+  // Handle selecting (tapping the screen)
+  function onSelect() {
+    if (reticle.visible && model) {
+      const clone = model.clone();
+      clone.position.setFromMatrixPosition(reticle.matrix);
+      scene.add(clone);
+    }
+  }
+
+  function render(timestamp, frame) {
+    if (frame) {
+      const referenceSpace = renderer.xr.getReferenceSpace();
+      const session = renderer.xr.getSession();
+
+      const viewerPose = frame.getViewerPose(referenceSpace);
+      if (viewerPose) {
+        const hitTestResults = frame.getHitTestResults(controller);
+
+        if (hitTestResults.length > 0) {
+          const hit = hitTestResults[0];
+          const referenceSpace = renderer.xr.getReferenceSpace();
+          const hitPose = hit.getPose(referenceSpace);
+
+          reticle.visible = true;
+          reticle.matrix.fromArray(hitPose.transform.matrix);
+        } else {
+          reticle.visible = false;
+        }
+      }
+    }
+
+    renderer.render(scene, camera);
+  }
+</script>
+
 </body>
 </html>
+
